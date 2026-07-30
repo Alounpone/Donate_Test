@@ -10,26 +10,41 @@ export interface DonationRecord {
   created_at?: string;
 }
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+// Safely evaluate environment variables without throwing during Vercel static builds
+const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const rawKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 export const isSupabaseConfigured = Boolean(
-  supabaseUrl && 
-  supabaseAnonKey && 
-  supabaseUrl.startsWith("http") && 
-  !supabaseUrl.includes("your-supabase-project")
+  rawUrl &&
+  rawKey &&
+  rawUrl.startsWith("http") &&
+  !rawUrl.includes("your-supabase-project")
 );
 
-// Lazy initialized Supabase client instance
+// Fallback placeholder URL & key to prevent createClient from throwing during build time if env vars are missing
+const supabaseUrl = isSupabaseConfigured ? rawUrl! : "https://placeholder-project.supabase.co";
+const supabaseAnonKey = isSupabaseConfigured ? rawKey! : "placeholder-anon-key";
+
+// Lazy-initialized safe Supabase client instance
 let supabaseInstance: SupabaseClient | null = null;
 
-export function getSupabaseClient() {
+export function getSupabaseClient(): SupabaseClient | null {
   if (!isSupabaseConfigured) return null;
   if (!supabaseInstance) {
-    supabaseInstance = createClient(supabaseUrl, supabaseAnonKey);
+    try {
+      supabaseInstance = createClient(supabaseUrl, supabaseAnonKey);
+    } catch (e) {
+      console.warn("Failed to initialize Supabase client:", e);
+      return null;
+    }
   }
   return supabaseInstance;
 }
+
+// Safe singleton client instance for direct imports
+export const supabase = isSupabaseConfigured
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : null;
 
 // Local Fallback Event System for local testing when Supabase keys aren't provided yet
 const LOCAL_STORAGE_KEY = "donate_laos_local_donations";
@@ -41,12 +56,16 @@ class LocalRealtimeChannel {
 
   constructor() {
     if (typeof window !== "undefined" && "BroadcastChannel" in window) {
-      this.channel = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
-      this.channel.onmessage = (event) => {
-        if (event.data && event.data.type === "INSERT") {
-          this.listeners.forEach((fn) => fn(event.data.record));
-        }
-      };
+      try {
+        this.channel = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
+        this.channel.onmessage = (event) => {
+          if (event.data && event.data.type === "INSERT") {
+            this.listeners.forEach((fn) => fn(event.data.record));
+          }
+        };
+      } catch {
+        // BroadcastChannel fallback silently ignored if unsupported
+      }
     }
   }
 
@@ -59,7 +78,11 @@ class LocalRealtimeChannel {
 
   broadcast(record: DonationRecord) {
     if (this.channel) {
-      this.channel.postMessage({ type: "INSERT", record });
+      try {
+        this.channel.postMessage({ type: "INSERT", record });
+      } catch {
+        // Ignore channel post errors
+      }
     }
     // Also notify local window listeners directly
     this.listeners.forEach((fn) => fn(record));
@@ -72,13 +95,14 @@ export const localRealtime = new LocalRealtimeChannel();
  * Get recent donations for a streamer (Supabase or LocalStorage fallback)
  */
 export async function getDonations(streamerSlug: string): Promise<DonationRecord[]> {
-  const supabase = getSupabaseClient();
-  if (supabase) {
+  const safeSlug = (streamerSlug || "test").toLowerCase();
+  const client = getSupabaseClient();
+  if (client) {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await client
         .from("donations")
         .select("*")
-        .eq("streamer_slug", streamerSlug)
+        .eq("streamer_slug", safeSlug)
         .order("created_at", { ascending: false });
 
       if (!error && data) {
@@ -94,7 +118,7 @@ export async function getDonations(streamerSlug: string): Promise<DonationRecord
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
     const all: DonationRecord[] = raw ? JSON.parse(raw) : [];
-    return all.filter((d) => d.streamer_slug === streamerSlug);
+    return all.filter((d) => d.streamer_slug === safeSlug);
   } catch {
     return [];
   }
@@ -104,17 +128,19 @@ export async function getDonations(streamerSlug: string): Promise<DonationRecord
  * Insert new donation into Supabase (or LocalStorage fallback)
  */
 export async function insertDonation(donation: DonationRecord): Promise<{ success: boolean; data?: DonationRecord; error?: string }> {
+  const safeSlug = (donation.streamer_slug || "test").toLowerCase();
   const recordToInsert: DonationRecord = {
     ...donation,
+    streamer_slug: safeSlug,
     id: donation.id || (typeof crypto !== "undefined" ? crypto.randomUUID() : `local-${Date.now()}`),
     status: donation.status || "approved",
     created_at: donation.created_at || new Date().toISOString(),
   };
 
-  const supabase = getSupabaseClient();
-  if (supabase) {
+  const client = getSupabaseClient();
+  if (client) {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await client
         .from("donations")
         .insert([recordToInsert])
         .select()
@@ -158,20 +184,21 @@ export function subscribeToDonations(
   streamerSlug: string,
   onNewDonation: (donation: DonationRecord) => void
 ) {
-  const supabase = getSupabaseClient();
+  const safeSlug = (streamerSlug || "test").toLowerCase();
+  const client = getSupabaseClient();
   let supabaseChannel: ReturnType<SupabaseClient["channel"]> | null = null;
 
-  if (supabase) {
+  if (client) {
     try {
-      supabaseChannel = supabase
-        .channel(`donations-streamer-${streamerSlug}`)
+      supabaseChannel = client
+        .channel(`donations-streamer-${safeSlug}`)
         .on(
           "postgres_changes",
           {
             event: "INSERT",
             schema: "public",
             table: "donations",
-            filter: `streamer_slug=eq.${streamerSlug}`,
+            filter: `streamer_slug=eq.${safeSlug}`,
           },
           (payload) => {
             if (payload.new) {
@@ -187,14 +214,14 @@ export function subscribeToDonations(
 
   // Also register local fallback subscription so instant test buttons and local tab updates work simultaneously
   const unsubscribeLocal = localRealtime.subscribe((donation) => {
-    if (donation.streamer_slug === streamerSlug) {
+    if ((donation.streamer_slug || "test").toLowerCase() === safeSlug) {
       onNewDonation(donation);
     }
   });
 
   return () => {
-    if (supabaseChannel && supabase) {
-      supabase.removeChannel(supabaseChannel);
+    if (supabaseChannel && client) {
+      client.removeChannel(supabaseChannel);
     }
     unsubscribeLocal();
   };

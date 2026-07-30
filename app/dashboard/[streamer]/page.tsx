@@ -24,9 +24,13 @@ import {
   Sparkles
 } from "lucide-react";
 
-export default function StreamerDashboard() {
-  const params = useParams();
-  const streamerSlug = ((params?.streamer as string) || "souk").toLowerCase();
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+export default function StreamerDashboard({ params }: { params?: { streamer?: string } }) {
+  const routerParams = useParams();
+  const rawStreamer = params?.streamer || (routerParams?.streamer as string) || "test";
+  const streamerSlug = (typeof rawStreamer === "string" ? rawStreamer : "test").toLowerCase() || "test";
 
   const [donations, setDonations] = useState<DonationRecord[]>([]);
   const [loading, setLoading] = useState(true);

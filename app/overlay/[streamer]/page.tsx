@@ -7,9 +7,13 @@ import { subscribeToDonations, DonationRecord } from "@/lib/supabase/client";
 import { formatLAK, playChimeSound, speakMessage } from "@/lib/utils";
 import { Heart, Volume2, Sparkles, Tv, CheckCircle2 } from "lucide-react";
 
-export default function OBSOverlayPage() {
-  const params = useParams();
-  const streamerSlug = ((params?.streamer as string) || "souk").toLowerCase();
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+export default function OBSOverlayPage({ params }: { params?: { streamer?: string } }) {
+  const routerParams = useParams();
+  const rawStreamer = params?.streamer || (routerParams?.streamer as string) || "test";
+  const streamerSlug = (typeof rawStreamer === "string" ? rawStreamer : "test").toLowerCase() || "test";
 
   const [currentAlert, setCurrentAlert] = useState<DonationRecord | null>(null);
   const [alertQueue, setAlertQueue] = useState<DonationRecord[]>([]);
@@ -21,14 +25,12 @@ export default function OBSOverlayPage() {
   // Trigger Confetti blast on alert pop-in
   const fireConfetti = useCallback(() => {
     try {
-      // Left side burst
       confetti({
         particleCount: 60,
         spread: 70,
         origin: { y: 0.6, x: 0.3 },
         colors: ["#FFB800", "#D32F2F", "#3B82F6", "#10B981", "#EC4899"],
       });
-      // Right side burst
       confetti({
         particleCount: 60,
         spread: 70,
@@ -68,7 +70,6 @@ export default function OBSOverlayPage() {
       setTimeout(() => {
         setCurrentAlert(null);
         isProcessingRef.current = false;
-        // Schedule next queued item
         setTimeout(() => {
           processNextAlert();
         }, 500);
@@ -185,7 +186,7 @@ export default function OBSOverlayPage() {
         </div>
       )}
 
-      {/* Floating Control Bar for Streamer / Testing (Semi-transparent hoverable toolbar) */}
+      {/* Floating Control Bar for Streamer / Testing */}
       <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 opacity-30 hover:opacity-100 transition-opacity duration-300 bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-2xl p-3 shadow-2xl flex flex-wrap items-center gap-3 text-xs text-slate-300">
         <div className="flex items-center gap-1.5 font-semibold text-slate-200 px-2">
           <Tv className="w-4 h-4 text-indigo-400" />

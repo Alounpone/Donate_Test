@@ -20,9 +20,13 @@ import {
   LayoutDashboard
 } from "lucide-react";
 
-export default function DonorPage() {
-  const params = useParams();
-  const streamerSlug = (params?.streamer as string) || "souk";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+export default function DonorPage({ params }: { params?: { streamer?: string } }) {
+  const routerParams = useParams();
+  const rawStreamer = params?.streamer || (routerParams?.streamer as string) || "test";
+  const streamerSlug = (typeof rawStreamer === "string" ? rawStreamer : "test").toLowerCase() || "test";
 
   const [donorName, setDonorName] = useState("");
   const [amountLak, setAmountLak] = useState<number | "">(50000);
@@ -50,7 +54,7 @@ export default function DonorPage() {
     setStatusMessage(null);
 
     const result = await insertDonation({
-      streamer_slug: streamerSlug.toLowerCase(),
+      streamer_slug: streamerSlug,
       donor_name: donorName.trim(),
       amount_lak: numAmount,
       message: message.trim() || "ຂອບໃຈຫຼາຍໆ! (Thank you so much!)",
@@ -64,7 +68,6 @@ export default function DonorPage() {
         type: "success",
         text: `Donation of ${formatLAK(numAmount)} sent to @${streamerSlug}! Alert is populating on OBS overlay.`,
       });
-      // Clear form optional reset
       setMessage("");
     } else {
       setStatusMessage({
@@ -91,7 +94,7 @@ export default function DonorPage() {
     const randomMsg = testMessages[Math.floor(Math.random() * testMessages.length)];
 
     const result = await insertDonation({
-      streamer_slug: streamerSlug.toLowerCase(),
+      streamer_slug: streamerSlug,
       donor_name: `[TEST] ${randomName}`,
       amount_lak: randomAmount,
       message: randomMsg,
@@ -133,23 +136,23 @@ export default function DonorPage() {
             className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-sm font-medium"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Home</span>
+            <span>Home Portal</span>
           </Link>
 
           <div className="flex items-center gap-2">
-            <span className="text-xs px-2.5 py-1 rounded-full bg-slate-800 border border-slate-700 text-slate-300 font-mono">
+            <span className="text-xs px-2.5 py-1 rounded-full bg-slate-800 border border-slate-700 text-slate-300 font-mono font-bold">
               @{streamerSlug}
             </span>
             <Link
               href={`/overlay/${streamerSlug}`}
               target="_blank"
-              className="text-xs px-2.5 py-1 rounded-full bg-indigo-950/80 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-900 transition-colors flex items-center gap-1"
+              className="text-xs px-2.5 py-1 rounded-full bg-indigo-950/80 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-900 transition-colors flex items-center gap-1 font-medium"
             >
-              <Tv className="w-3 h-3" /> OBS Overlay
+              <Tv className="w-3 h-3" /> Overlay
             </Link>
             <Link
               href={`/dashboard/${streamerSlug}`}
-              className="text-xs px-2.5 py-1 rounded-full bg-amber-950/80 border border-amber-500/30 text-amber-300 hover:bg-amber-900 transition-colors flex items-center gap-1"
+              className="text-xs px-2.5 py-1 rounded-full bg-amber-950/80 border border-amber-500/30 text-amber-300 hover:bg-amber-900 transition-colors flex items-center gap-1 font-medium"
             >
               <LayoutDashboard className="w-3 h-3" /> Dashboard
             </Link>
@@ -178,7 +181,7 @@ export default function DonorPage() {
                 </span>
               </div>
               <p className="text-slate-400 text-sm mt-0.5">
-                Support channel <span className="font-mono text-amber-400">@{streamerSlug}</span> with BCEL One
+                Support channel <span className="font-mono text-amber-400 font-bold">@{streamerSlug}</span> with BCEL One
               </p>
             </div>
           </div>
